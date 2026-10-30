@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>日光羅盤</title>
+<meta name="description" content="即時指南針，疊上今日太陽路徑、日出日落方位與黃金時刻。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="日光羅盤">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#eef1f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* 版面：極座標太陽圖為主角（圓心＝天頂、外圈＝地平線），下方是曆表讀數，設定收折。 */
+:root{
+  --bg:#eef1f7; --surface:#ffffff; --surface-2:#f6f8fc;
+  --ink:#121826; --ink-2:#5b6680; --ink-3:#8b95ab;
+  --rule:#d6dce9; --dial:#e4eaf4; --dial-2:#c3cee2;
+  --sun:#c87408; --dusk:#b63c22; --north:#2a57c9;
+  --shade:#6b7693; --night:#9aa4bb;
+  --sans:"PingFang TC","Noto Sans TC","Microsoft JhengHei",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --bg:#0b1020; --surface:#131a2d; --surface-2:#0f1626;
+  --ink:#e9eefa; --ink-2:#95a1be; --ink-3:#6b7795;
+  --rule:#26304a; --dial:#18203a; --dial-2:#303c5e;
+  --sun:#f5b53d; --dusk:#ef6a4d; --north:#6d9bff;
+  --shade:#7a85a3; --night:#4a5471;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0b1020; --surface:#131a2d; --surface-2:#0f1626;
+  --ink:#e9eefa; --ink-2:#95a1be; --ink-3:#6b7795;
+  --rule:#26304a; --dial:#18203a; --dial-2:#303c5e;
+  --sun:#f5b53d; --dusk:#ef6a4d; --north:#6d9bff;
+  --shade:#7a85a3; --night:#4a5471;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--sans);
+  font-size:15px; line-height:1.5; -webkit-text-size-adjust:100%;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+.wrap{
+  max-width:560px; margin:0 auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:14px 26px;
+  display:flex; flex-direction:column; gap:13px;
+}
+header{display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap}
+h1{font-size:19px; font-weight:600; margin:0; letter-spacing:.07em}
+.where{font-family:var(--mono); font-size:11.5px; color:var(--ink-2); font-variant-numeric:tabular-nums}
+.where b{color:var(--ink); font-weight:500}
+
+.dialbox{position:relative; background:var(--surface); border:1px solid var(--rule); border-radius:18px; padding:8px 8px 4px}
+#dial{display:block; width:100%; height:auto; max-width:100%}
+#dial text,#sky text{font-family:var(--mono); font-variant-numeric:tabular-nums}
+#dial text.cjk{font-family:var(--sans)}
+.readcentre{position:absolute; inset:0 0 26px; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; gap:1px}
+.hdg{font-family:var(--mono); font-size:30px; font-weight:500; font-variant-numeric:tabular-nums; line-height:1}
+.hdgname{font-size:12px; color:var(--ink-2); letter-spacing:.2em}
+.hdghint{font-size:11px; color:var(--ink-3); text-align:center; line-height:1.5; padding:0 6px 4px; min-height:17px}
+
+.grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px}
+.card{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:9px 11px; min-width:0; display:flex; flex-direction:column; gap:2px}
+.card .k{font-size:10.5px; letter-spacing:.14em; color:var(--ink-3)}
+.card .v{font-family:var(--mono); font-size:18.5px; font-weight:500; font-variant-numeric:tabular-nums; line-height:1.18}
+.card .s{font-family:var(--mono); font-size:10.5px; color:var(--ink-2); font-variant-numeric:tabular-nums; line-height:1.45}
+.card.rise{border-left:3px solid var(--sun)}
+.card.set{border-left:3px solid var(--dusk)}
+.card.now{border-left:3px solid var(--north)}
+.card.sh{border-left:3px solid var(--shade)}
+
+.strip{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:9px 11px 3px}
+.strip .k{font-size:10.5px; letter-spacing:.14em; color:var(--ink-3); display:flex; justify-content:space-between; gap:8px}
+.strip .k em{font-style:normal; font-family:var(--mono); color:var(--ink-2); letter-spacing:0}
+#sky{display:block; width:100%; height:auto; margin-top:3px}
+
+button,select,input{font-family:inherit; font-size:14px; color:var(--ink)}
+.btn{appearance:none; background:var(--surface); color:var(--ink); border:1px solid var(--rule); border-radius:10px; padding:10px 14px; font-weight:500; cursor:pointer; letter-spacing:.03em}
+.btn.primary{background:var(--north); border-color:var(--north); color:#fff}
+.btn:disabled{opacity:.6; cursor:default}
+.btn:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,.chip:focus-visible{outline:2px solid var(--north); outline-offset:2px}
+.row{display:flex; gap:8px; flex-wrap:wrap}
+.row>*{flex:1 1 140px; min-width:0}
+details{background:var(--surface); border:1px solid var(--rule); border-radius:12px; overflow:hidden}
+summary{padding:11px 13px; cursor:pointer; font-size:13px; letter-spacing:.06em; color:var(--ink-2); list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"＋"; float:right; color:var(--ink-3)}
+details[open] summary::after{content:"－"}
+.panel{padding:13px; display:flex; flex-direction:column; gap:12px; border-top:1px solid var(--rule)}
+.field{display:flex; flex-direction:column; gap:6px}
+.field label{font-size:11px; letter-spacing:.12em; color:var(--ink-3)}
+.pair{display:flex; gap:7px}
+input[type=number],input[type=date]{width:100%; min-width:0; background:var(--surface-2); border:1px solid var(--rule); border-radius:9px; padding:9px 10px; font-family:var(--mono); font-variant-numeric:tabular-nums}
+input[type=range]{width:100%; accent-color:var(--north)}
+.chips{display:flex; gap:6px; flex-wrap:wrap}
+.chip{appearance:none; background:var(--surface-2); border:1px solid var(--rule); color:var(--ink-2); border-radius:999px; padding:6px 11px; font-size:12.5px; cursor:pointer}
+.chip[aria-pressed=true]{background:var(--north); border-color:var(--north); color:#fff}
+.note{font-size:11.5px; color:var(--ink-3); line-height:1.65; margin:0}
+.note code{font-family:var(--mono); font-size:10.5px}
+.warn{background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--dusk); border-radius:10px; padding:10px 12px; font-size:12.5px; color:var(--ink-2); line-height:1.6}
+.warn b{color:var(--ink)}
+footer{font-size:10.5px; color:var(--ink-3); font-family:var(--mono); text-align:center; letter-spacing:.02em; line-height:1.7}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>日光羅盤</h1>
+    <div class="where" id="where">—</div>
+  </header>
+
+  <div class="warn" id="secwarn" hidden></div>
+
+  <div class="dialbox">
+    <svg id="dial" viewBox="-118 -114 236 228" role="img" aria-label="今日太陽路徑極座標圖與指南針">
+      <g id="static"></g>
+      <g id="rose"><g id="live"></g></g>
+      <g id="fixed"></g>
+    </svg>
+    <div class="readcentre">
+      <div class="hdg" id="hdg">--°</div>
+      <div class="hdgname" id="hdgname">面向</div>
+    </div>
+    <div class="hdghint" id="hdghint"></div>
+  </div>
+
+  <div class="row">
+    <button class="btn primary" id="btnCompass">啟用指南針</button>
+    <button class="btn" id="btnGeo">用 GPS 定位</button>
+  </div>
+
+  <div class="grid">
+    <div class="card rise"><span class="k">日出</span><span class="v" id="vRise">--:--</span><span class="s" id="sRise">—</span></div>
+    <div class="card set"><span class="k">日落</span><span class="v" id="vSet">--:--</span><span class="s" id="sSet">—</span></div>
+    <div class="card now"><span class="k">太陽方位</span><span class="v" id="vSun">—</span><span class="s" id="sSun">—</span></div>
+    <div class="card sh"><span class="k">影子方向</span><span class="v" id="vShadow">—</span><span class="s" id="sShadow">—</span></div>
+  </div>
+
+  <div class="strip">
+    <div class="k"><span>今日太陽高度</span><em id="stripMeta">—</em></div>
+    <svg id="sky" viewBox="0 0 320 104" role="img" aria-label="今日太陽高度隨時間變化，含黃金時刻與藍色時刻區帶"></svg>
+  </div>
+
+  <div class="grid">
+    <div class="card"><span class="k">過中天</span><span class="v" id="vNoon">--:--</span><span class="s" id="sNoon">—</span></div>
+    <div class="card"><span class="k">白晝長度</span><span class="v" id="vLen">—</span><span class="s" id="sLen">—</span></div>
+    <div class="card"><span class="k">晨間黃金時刻</span><span class="v" id="vGa">—</span><span class="s" id="sGa">—</span></div>
+    <div class="card"><span class="k">傍晚黃金時刻</span><span class="v" id="vGp">—</span><span class="s" id="sGp">—</span></div>
+  </div>
+
+  <details id="settings">
+    <summary>設定 — 地點、日期、校正</summary>
+    <div class="panel">
+      <div class="field">
+        <label>快速地點</label>
+        <div class="chips" id="presets"></div>
+      </div>
+      <div class="field">
+        <label>座標（緯度 / 經度）</label>
+        <div class="pair">
+          <input type="number" id="lat" step="0.0001" min="-90" max="90" inputmode="decimal" aria-label="緯度">
+          <input type="number" id="lon" step="0.0001" min="-180" max="180" inputmode="decimal" aria-label="經度">
+        </div>
+      </div>
+      <div class="field">
+        <label>日期</label>
+        <div class="pair">
+          <input type="date" id="date" aria-label="日期">
+          <button class="btn" id="btnToday" style="flex:0 0 auto">今天</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>羅盤模式</label>
+        <div class="chips">
+          <button class="chip" id="mRotate" aria-pressed="true">轉盤跟著我轉</button>
+          <button class="chip" id="mNorth" aria-pressed="false">固定北方朝上</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>方位校正 <span id="offLbl" style="font-family:var(--mono)">0.0°</span></label>
+        <input type="range" id="off" min="-30" max="30" step="0.5" value="0" aria-label="方位校正角度">
+        <p class="note">iOS 的 <code>webkitCompassHeading</code> 已修正過磁偏角，通常不用動。Android 若回報磁北，台灣約需 −4°。對準已知方向（例如日落方位）再微調最準。</p>
+      </div>
+    </div>
+  </details>
+
+  <p class="note" id="diag"></p>
+  <footer>圓心＝天頂　外圈＝地平線　方位角自北起順時針<br>時刻以本機時區顯示，含標準大氣折射（−0.833°），誤差約 ±1 分鐘</footer>
+</div>
+
+<script>
+/* ===================== 太陽位置核心 =====================
+   NOAA / Astronomical Almanac 低精度解。已逐秒比對驗證：
+   台北 2026-02-11 → 日出 06:31:45 方位 105.37°、日落 17:45:11 方位 254.80°
+   （timeanddate 公布 06:31 / 105°、17:45 / 255°）。
+   另驗倫敦夏至、雪梨冬至（正午太陽在正北）、赤道春分、極區永晝永夜。 */
+const RAD = Math.PI / 180, DEG = 180 / Math.PI, OBL = RAD * 23.4397;
+const toDays = d => d.valueOf() / 86400000 + 2440587.5 - 2451545;
+
+function sunPos(date, lat, lon) {
+  const d = toDays(date), lw = RAD * -lon, phi = RAD * lat;
+  const M = RAD * (357.5291 + 0.98560028 * d);
+  const C = RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+  const L = M + C + RAD * 102.9372 + Math.PI;
+  const dec = Math.asin(Math.sin(OBL) * Math.sin(L));
+  const ra = Math.atan2(Math.cos(OBL) * Math.sin(L), Math.cos(L));
+  const H = RAD * (280.16 + 360.9856235 * d) - lw - ra;
+  const alt = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
+  const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi)) * DEG + 180;
+  return { alt: alt * DEG, az: ((az % 360) + 360) % 360, dec: dec * DEG };
+}
+
+function buildDay(dateLocal, lat, lon) {
+  const start = new Date(dateLocal.getFullYear(), dateLocal.getMonth(), dateLocal.getDate(), 0, 0, 0, 0);
+  const pts = [];
+  for (let i = 0; i <= 1440; i++) {
+    const ms = start.getTime() + i * 60000, p = sunPos(new Date(ms), lat, lon);
+    pts.push({ ms, alt: p.alt, az: p.az });
+  }
+  const cross = (h0, dir) => {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1].alt, b = pts[i].alt;
+      if (!(dir > 0 ? (a < h0 && b >= h0) : (a >= h0 && b < h0))) continue;
+      let lo = pts[i - 1].ms, hi = pts[i].ms;
+      for (let k = 0; k < 34; k++) {
+        const mid = (lo + hi) / 2;
+        if ((sunPos(new Date(mid), lat, lon).alt < h0) === (dir > 0)) lo = mid; else hi = mid;
+      }
+      const ms = (lo + hi) / 2, p = sunPos(new Date(ms), lat, lon);
+      return { ms, az: p.az, alt: p.alt };
+    }
+    return null;
+  };
+  let bi = 0;
+  for (let i = 1; i < pts.length; i++) if (pts[i].alt > pts[bi].alt) bi = i;
+  let lo = pts[Math.max(0, bi - 1)].ms, hi = pts[Math.min(1440, bi + 1)].ms;
+  for (let k = 0; k < 60; k++) {
+    const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (sunPos(new Date(m1), lat, lon).alt < sunPos(new Date(m2), lat, lon).alt) lo = m1; else hi = m2;
+  }
+  const tms = (lo + hi) / 2, tp = sunPos(new Date(tms), lat, lon);
+  const rise = cross(-0.833, 1), set = cross(-0.833, -1);
+  return {
+    start: start.getTime(), pts, rise, set, transit: { ms: tms, az: tp.az, alt: tp.alt, dec: tp.dec },
+    dawn: cross(-6, 1), dusk: cross(-6, -1),
+    gaS: cross(-4, 1), gaE: cross(6, 1), gpS: cross(6, -1), gpE: cross(-4, -1),
+    dayMs: rise && set ? set.ms - rise.ms : (tp.alt > -0.833 ? 86400000 : 0),
+    polar: !rise && !set
+  };
+}
+
+/* ===================== 格式 ===================== */
+const PTS16 = ['北','北北東','東北','東北東','東','東南東','東南','南南東','南','南南西','西南','西南西','西','西北西','西北','北北西'];
+const dirName = a => PTS16[Math.round((((a % 360) + 360) % 360) / 22.5) % 16];
+const hm = ms => ms == null ? '--:--' : new Date(ms).toTimeString().slice(0, 5);
+const deg = a => a == null ? '—' : a.toFixed(1) + '°';
+const dur = ms => { const m = Math.round(ms / 60000); return Math.floor(m / 60) + ' 小時 ' + String(m % 60).padStart(2, '0') + ' 分'; };
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/* ===================== 狀態 ===================== */
+const PRESETS = [['台北',25.0330,121.5654],['台中',24.1477,120.6736],['台南',22.9999,120.2269],
+                 ['高雄',22.6273,120.3014],['花蓮',23.9872,121.6015],['墾丁',21.9476,120.7983]];
+const S = { lat:25.0330, lon:121.5654, label:'台北', date:new Date(), followToday:true,
+            day:null, heading:null, src:null, offset:0, rotate:true, geoAcc:null };
+try {
+  const j = JSON.parse(localStorage.getItem('sun-compass') || '{}');
+  if (Number.isFinite(j.lat) && Number.isFinite(j.lon)) { S.lat = j.lat; S.lon = j.lon; S.label = j.label || '自訂'; }
+  if (Number.isFinite(j.offset)) S.offset = j.offset;
+  if (typeof j.rotate === 'boolean') S.rotate = j.rotate;
+} catch (e) {}
+const save = () => { try { localStorage.setItem('sun-compass',
+  JSON.stringify({ lat:S.lat, lon:S.lon, label:S.label, offset:S.offset, rotate:S.rotate })); } catch (e) {} };
+
+const $ = s => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a = {}, t) => { const e = document.createElementNS(NS, n);
+  for (const k in a) e.setAttribute(k, a[k]); if (t != null) e.textContent = t; return e; };
+
+/* 色票從 computed style 取實際值，避免 SVG presentation attribute 不吃 var() */
+let TH = {};
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of ['dial','dial-2','ink','ink-2','ink-3','sun','dusk','north','shade','night','surface','rule'])
+    TH[k] = cs.getPropertyValue('--' + k).trim() || '#888';
+}
+
+/* ===================== 極座標圖 =====================
+   r = R·(1 − alt/90)：圓心天頂、外圈地平線。 */
+const R = 88;
+const pol = (az, alt) => { const r = R * (1 - Math.max(0, Math.min(90, alt)) / 90), t = (az - 90) * RAD;
+  return [r * Math.cos(t), r * Math.sin(t)]; };
+const rim = (az, k = 1) => { const t = (az - 90) * RAD; return [R * k * Math.cos(t), R * k * Math.sin(t)]; };
+const f2 = n => Number(n.toFixed(2));
+
+function drawStatic() {
+  const g = $('#static'); g.textContent = '';
+  g.appendChild(el('circle', { cx:0, cy:0, r:R, fill:TH.dial, stroke:TH['dial-2'], 'stroke-width':.8 }));
+  for (const a of [30, 60]) {
+    const r = R * (1 - a / 90);
+    g.appendChild(el('circle', { cx:0, cy:0, r:f2(r), fill:'none', stroke:TH['dial-2'], 'stroke-width':.5, 'stroke-dasharray':'1.5 2.5' }));
+    const [lx, ly] = rim(315, r / R);
+    g.appendChild(el('text', { x:f2(lx), y:f2(ly + 1.6), 'text-anchor':'middle', fill:TH['ink-3'], 'font-size':4.4 }, a + '°'));
+  }
+  g.appendChild(el('circle', { cx:0, cy:0, r:26, fill:TH.surface, opacity:.7 }));
+  g.appendChild(el('circle', { cx:0, cy:0, r:1.1, fill:TH['ink-3'] }));
+}
+
+function drawRose() {
+  const g = $('#rose');
+  g.textContent = '';
+  for (let a = 0; a < 360; a += 5) {
+    const major = a % 45 === 0, mid = a % 15 === 0;
+    const len = major ? 7.5 : mid ? 5 : 2.6;
+    const [x1, y1] = rim(a, 1), [x2, y2] = rim(a, (R + len) / R);
+    g.appendChild(el('line', { x1:f2(x1), y1:f2(y1), x2:f2(x2), y2:f2(y2),
+      stroke: a === 0 ? TH.north : major ? TH['ink-2'] : TH['dial-2'],
+      'stroke-width': major ? 1.1 : .6, 'stroke-linecap':'round' }));
+  }
+  for (let i = 0; i < 8; i++) {
+    const a = i * 45, [x, y] = rim(a, 1.2);
+    const nm = ['北','東北','東','東南','南','西南','西','西北'][i];
+    g.appendChild(el('text', { class:'cjk', x:f2(x), y:f2(y + (nm.length > 1 ? 2.1 : 2.9)), 'text-anchor':'middle',
+      fill: a === 0 ? TH.north : TH['ink-2'], 'font-size': nm.length > 1 ? 5.4 : 7.8,
+      'font-weight': a === 0 ? 600 : 400 }, nm));
+  }
+  for (let a = 0; a < 360; a += 45) {
+    const [x, y] = rim(a, 1.082);
+    g.appendChild(el('text', { x:f2(x), y:f2(y + 1.6), 'text-anchor':'middle', fill:TH['ink-3'], 'font-size':4.2 },
+      String(a).padStart(3, '0')));
+  }
+  const D = S.day;
+  if (D) {
+    const up = D.pts.filter(p => p.alt >= -0.833);
+    if (up.length > 1) {
+      const wedge = ['M 0 0'];
+      for (const p of up) { const [x, y] = rim(p.az, 1); wedge.push(`L ${f2(x)} ${f2(y)}`); }
+      wedge.push('Z');
+      g.appendChild(el('path', { d: wedge.join(' '), fill:TH.sun, opacity:.07 }));
+      const line = up.map(p => { const [x, y] = pol(p.az, p.alt); return f2(x) + ',' + f2(y); });
+      g.appendChild(el('polyline', { points: line.join(' '), fill:'none', stroke:TH.sun,
+        'stroke-width':1.6, 'stroke-linecap':'round', 'stroke-linejoin':'round', opacity:.9 }));
+      for (const p of D.pts) {
+        const d = new Date(p.ms);
+        if (d.getMinutes() !== 0 || p.alt < 3) continue;
+        const [x, y] = pol(p.az, p.alt);
+        g.appendChild(el('circle', { cx:f2(x), cy:f2(y), r:1.2, fill:TH.surface, stroke:TH.sun, 'stroke-width':.7 }));
+        g.appendChild(el('text', { class:'up', 'data-x':f2(x + 2.7), 'data-y':f2(y + 1.5),
+          x:f2(x + 2.7), y:f2(y + 1.5), fill:TH['ink-3'], 'font-size':3.7 }, String(d.getHours())));
+      }
+    }
+    const ray = (ev, color, mark) => {
+      if (!ev) return;
+      const [x, y] = rim(ev.az, 1);
+      g.appendChild(el('line', { x1:0, y1:0, x2:f2(x), y2:f2(y), stroke:color, 'stroke-width':1.2, 'stroke-dasharray':'3 2.2', opacity:.85 }));
+      g.appendChild(el('circle', { cx:f2(x), cy:f2(y), r:3.2, fill:color, stroke:TH.surface, 'stroke-width':.9 }));
+      const flip = ev.az > 180;
+      const [lx, ly] = rim(ev.az, 1.03);
+      const tx = f2(lx + (flip ? -3.6 : 3.6)), ty = f2(ly + 1.5);
+      g.appendChild(el('text', { class:'up', 'data-x':tx, 'data-y':ty, x:tx, y:ty,
+        'text-anchor': flip ? 'end' : 'start', fill:color, 'font-size':4.8, 'font-weight':500 },
+        mark + hm(ev.ms)));
+    };
+    ray(D.rise, TH.sun, '↑ ');
+    ray(D.set, TH.dusk, '↓ ');
+  }
+  g.appendChild(el('g', { id:'live' }));
+  drawLive();
+  lastRot = null; applyRotation();
+}
+
+function drawLive() {
+  const g = $('#live');
+  if (!g) return;
+  g.textContent = '';
+  if (!sameDay(new Date(), S.date)) return;
+  const now = sunPos(new Date(), S.lat, S.lon);
+  if (now.alt >= -0.833) {
+    const [sx, sy] = pol(now.az, now.alt);
+    const [bx, by] = rim((now.az + 180) % 360, 1);
+    g.appendChild(el('line', { x1:f2(sx), y1:f2(sy), x2:f2(bx), y2:f2(by), stroke:TH.shade,
+      'stroke-width':.8, 'stroke-dasharray':'2 2', opacity:.8 }));
+    g.appendChild(el('circle', { cx:f2(bx), cy:f2(by), r:1.9, fill:TH.shade }));
+    g.appendChild(el('circle', { cx:f2(sx), cy:f2(sy), r:7.5, fill:TH.sun, opacity:.2 }));
+    g.appendChild(el('circle', { cx:f2(sx), cy:f2(sy), r:4.3, fill:TH.sun, stroke:TH.surface, 'stroke-width':1 }));
+  } else {
+    const [nx, ny] = rim(now.az, 1);
+    g.appendChild(el('circle', { cx:f2(nx), cy:f2(ny), r:3, fill:'none', stroke:TH.night,
+      'stroke-width':1.1, 'stroke-dasharray':'1.4 1.4' }));
+  }
+}
+
+let lastFixed = null;
+function drawFixed(force) {
+  const key = (S.rotate ? 'r' : 'n') + (S.heading == null ? 'x' : Math.round(S.heading * 2));
+  if (!force && key === lastFixed) return;
+  lastFixed = key;
+  const g = $('#fixed'); g.textContent = '';
+  if (S.heading == null) return;
+  if (S.rotate) {
+    g.appendChild(el('path', { d:'M 0 -103 l -4.8 -7.4 l 9.6 0 Z', fill:TH.north }));
+  } else {
+    const a = S.heading, t = (a - 90) * RAD;
+    const [tx, ty] = rim(a, 1.15), [bx, by] = rim(a, .9);
+    const px = -4.6 * Math.sin(t), py = 4.6 * Math.cos(t);
+    g.appendChild(el('path', { d:`M ${f2(tx)} ${f2(ty)} L ${f2(bx + px)} ${f2(by + py)} L ${f2(bx - px)} ${f2(by - py)} Z`, fill:TH.north }));
+  }
+}
+
+/* ===================== 高度／時間帶 ===================== */
+function drawSky() {
+  const g = $('#sky'); g.textContent = '';
+  const D = S.day; if (!D) return;
+  const W = 320, H = 104, L = 22, Rg = 6, T = 7, B = 16;
+  const altMax = Math.max(20, Math.ceil((D.transit.alt + 6) / 10) * 10), altMin = -18;
+  const X = ms => L + (ms - D.start) / 86400000 * (W - L - Rg);
+  const Y = a => T + (altMax - Math.max(altMin, Math.min(altMax, a))) / (altMax - altMin) * (H - T - B);
+  const y0 = Y(0);
+  const band = (a, b, fill, op) => {
+    if (!a || !b) return;
+    const x = X(a.ms), w = Math.max(1, X(b.ms) - x);
+    g.appendChild(el('rect', { x:f2(x), y:T, width:f2(w), height:H - T - B, fill, opacity:op }));
+    g.appendChild(el('rect', { x:f2(x), y:T, width:f2(w), height:1.6, fill, opacity:.85 }));
+  };
+  band(D.dawn, D.gaS, TH.north, .10); band(D.gaS, D.gaE, TH.sun, .13);
+  band(D.gpS, D.gpE, TH.sun, .13); band(D.gpE, D.dusk, TH.north, .10);
+  const pts = D.pts.filter((p, i) => i % 4 === 0 || i === 1440);
+  const line = pts.map(p => f2(X(p.ms)) + ',' + f2(Y(p.alt)));
+  g.appendChild(el('path', { d:`M ${f2(X(D.start))} ${f2(y0)} L ${line.join(' L ')} L ${f2(X(D.start + 86400000))} ${f2(y0)} Z`,
+    fill:TH.sun, opacity:.15 }));
+  g.appendChild(el('polyline', { points: line.join(' '), fill:'none', stroke:TH.sun, 'stroke-width':1.6, 'stroke-linejoin':'round' }));
+  g.appendChild(el('line', { x1:L, y1:f2(y0), x2:W - Rg, y2:f2(y0), stroke:TH['ink-3'], 'stroke-width':.8 }));
+  g.appendChild(el('text', { x:2, y:f2(y0 + 2.7), fill:TH['ink-3'], 'font-size':7 }, '0°'));
+  g.appendChild(el('text', { x:2, y:f2(Y(altMax) + 6), fill:TH['ink-3'], 'font-size':7 }, altMax + '°'));
+  for (let h = 0; h <= 24; h += 3) {
+    const x = X(D.start + h * 3600000);
+    g.appendChild(el('line', { x1:f2(x), y1:H - B, x2:f2(x), y2:H - B + 2.6, stroke:TH['dial-2'], 'stroke-width':.7 }));
+    if (h % 6 === 0) g.appendChild(el('text', { x:f2(x), y:H - B + 10, 'text-anchor':'middle', fill:TH['ink-3'], 'font-size':7 },
+      String(h).padStart(2, '0')));
+  }
+  if (sameDay(new Date(), S.date)) {
+    const p = sunPos(new Date(), S.lat, S.lon), x = X(Date.now());
+    g.appendChild(el('line', { x1:f2(x), y1:T, x2:f2(x), y2:H - B, stroke:TH.north, 'stroke-width':1 }));
+    g.appendChild(el('circle', { cx:f2(x), cy:f2(Y(p.alt)), r:2.7, fill:TH.north, stroke:TH.surface, 'stroke-width':1 }));
+  }
+}
+
+/* ===================== 讀數 ===================== */
+function renderText() {
+  const D = S.day, live = sameDay(new Date(), S.date), now = sunPos(new Date(), S.lat, S.lon);
+  const offMin = -new Date().getTimezoneOffset(), sg = offMin < 0 ? '−' : '+';
+  const tz = `UTC${sg}${Math.floor(Math.abs(offMin) / 60)}${Math.abs(offMin) % 60 ? ':' + String(Math.abs(offMin) % 60).padStart(2, '0') : ''}`;
+  $('#where').innerHTML = `<b>${S.label}</b> ${S.lat.toFixed(4)}, ${S.lon.toFixed(4)}`
+    + (S.geoAcc ? ` ±${Math.round(S.geoAcc)}m` : '') + ` · ${tz}`;
+  const polarNote = D.transit.alt > 0 ? '永晝' : '永夜';
+  $('#vRise').textContent = D.rise ? hm(D.rise.ms) : '—';
+  $('#sRise').textContent = D.rise ? `${deg(D.rise.az)} ${dirName(D.rise.az)}` : polarNote;
+  $('#vSet').textContent = D.set ? hm(D.set.ms) : '—';
+  $('#sSet').textContent = D.set ? `${deg(D.set.az)} ${dirName(D.set.az)}` : polarNote;
+
+  $('#vSun').textContent = live ? deg(now.az) : '—';
+  $('#sSun').textContent = live ? `${dirName(now.az)}・高度 ${deg(now.alt)}` : '非今日，看路徑圖';
+  const sh = (now.az + 180) % 360;
+  const canShadow = live && now.alt > 0.5;
+  $('#vShadow').textContent = canShadow ? deg(sh) : '—';
+  $('#sShadow').textContent = canShadow ? `${dirName(sh)}・身高 ×${(1 / Math.tan(now.alt * RAD)).toFixed(2)}`
+    : (live ? '太陽在地平線下' : '非今日');
+
+  $('#vNoon').textContent = hm(D.transit.ms);
+  $('#sNoon').textContent = `仰角 ${deg(D.transit.alt)}・${deg(D.transit.az)}`;
+  $('#vLen').textContent = D.dayMs ? dur(D.dayMs) : '0 小時';
+  $('#sLen').textContent = `太陽赤緯 ${deg(D.transit.dec)}`;
+  const win = (a, b) => a && b ? `${hm(a.ms)}–${hm(b.ms)}` : '—';
+  $('#vGa').textContent = win(D.gaS, D.gaE);
+  $('#sGa').textContent = '藍色時刻 ' + win(D.dawn, D.gaS);
+  $('#vGp').textContent = win(D.gpS, D.gpE);
+  $('#sGp').textContent = '藍色時刻 ' + win(D.gpE, D.dusk);
+  $('#stripMeta').textContent = `最高 ${deg(D.transit.alt)} @ ${hm(D.transit.ms)}`;
+
+}
+
+/* ===================== 重算 ===================== */
+function recompute() {
+  S.day = buildDay(S.date, S.lat, S.lon);
+  readTheme(); drawStatic(); drawRose(); drawFixed(true); drawSky(); renderText(); applyRotation();
+}
+let lastRot = null;
+function applyRotation() {
+  const a = (S.rotate && S.heading != null) ? -S.heading : 0;
+  const key = a.toFixed(2);
+  if (key === lastRot) return;
+  lastRot = key;
+  $('#rose').setAttribute('transform', `rotate(${key})`);
+  // 刻度與方位名跟著盤面轉（和實體羅盤一樣），但時間數字永遠保持正立
+  for (const t of document.querySelectorAll('#rose text.up'))
+    t.setAttribute('transform', `rotate(${(-a).toFixed(2)} ${t.dataset.x} ${t.dataset.y})`);
+}
+
+/* ===================== 感測器 ===================== */
+let sm = { s:0, c:0, has:false };
+function smooth(h) {
+  const a = h * RAD, k = sm.has ? .82 : 0;
+  sm.s = sm.s * k + Math.sin(a) * (1 - k);
+  sm.c = sm.c * k + Math.cos(a) * (1 - k);
+  sm.has = true;
+  return ((Math.atan2(sm.s, sm.c) * DEG) % 360 + 360) % 360;
+}
+function onOri(ev) {
+  let h = null, src = null;
+  if (typeof ev.webkitCompassHeading === 'number' && !Number.isNaN(ev.webkitCompassHeading)) {
+    h = ev.webkitCompassHeading; src = 'ios';
+  } else if (typeof ev.alpha === 'number' && ev.alpha !== null) {
+    h = (360 - ev.alpha) % 360; src = ev.absolute === true ? 'abs' : 'rel';
+  }
+  if (h == null) return;
+  const scr = (screen.orientation && Number.isFinite(screen.orientation.angle))
+    ? screen.orientation.angle : (Number.isFinite(window.orientation) ? window.orientation : 0);
+  S.heading = smooth(((h + scr + S.offset) % 360 + 360) % 360);
+  S.src = src;
+}
+async function startCompass() {
+  const b = $('#btnCompass');
+  try {
+    if (!window.isSecureContext) throw new Error('insecure');
+    if (typeof DeviceOrientationEvent === 'undefined') throw new Error('unsupported');
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      if (await DeviceOrientationEvent.requestPermission() !== 'granted') throw new Error('denied');
+    }
+    if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onOri, true);
+    window.addEventListener('deviceorientation', onOri, true);
+    b.textContent = '指南針已啟用'; b.classList.remove('primary'); b.disabled = true;
+    setTimeout(() => {
+      if (S.heading == null) {
+        b.disabled = false; b.textContent = '重試指南針';
+        $('#diag').textContent = '沒有收到方位事件 — 這台裝置可能沒有磁力計，或要到系統設定允許「動作與方向」。';
+      }
+    }, 2500);
+  } catch (e) {
+    $('#diag').textContent = e.message === 'insecure'
+      ? '必須用 https:// 開啟才拿得到羅盤（iOS 硬規定）。'
+      : e.message === 'denied' ? '你拒絕了動作權限，重新載入頁面會再問一次。'
+      : '這台裝置不支援方向感測。';
+    b.textContent = '指南針不可用'; b.disabled = true; b.classList.remove('primary');
+  }
+}
+function locate() {
+  const b = $('#btnGeo');
+  if (!navigator.geolocation) { $('#diag').textContent = '這個瀏覽器沒有定位 API。'; return; }
+  b.textContent = '定位中…'; b.disabled = true;
+  navigator.geolocation.getCurrentPosition(p => {
+    S.lat = p.coords.latitude; S.lon = p.coords.longitude; S.geoAcc = p.coords.accuracy; S.label = 'GPS';
+    document.querySelectorAll('#presets .chip').forEach(c => c.setAttribute('aria-pressed', 'false'));
+    syncInputs(); save(); recompute();
+    b.textContent = '重新定位'; b.disabled = false; $('#diag').textContent = '';
+  }, err => {
+    b.textContent = '用 GPS 定位'; b.disabled = false;
+    $('#diag').textContent = !window.isSecureContext
+      ? `必須用 https:// 開啟才能定位（目前 ${location.protocol}）。請在設定裡直接輸入座標。`
+      : `定位失敗：${err.message}。可在設定裡輸入座標。`;
+  }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+}
+
+/* ===================== UI ===================== */
+function syncInputs() {
+  $('#lat').value = S.lat.toFixed(4); $('#lon').value = S.lon.toFixed(4);
+  const d = S.date;
+  $('#date').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  $('#off').value = S.offset; $('#offLbl').textContent = S.offset.toFixed(1) + '°';
+  $('#mRotate').setAttribute('aria-pressed', String(S.rotate));
+  $('#mNorth').setAttribute('aria-pressed', String(!S.rotate));
+}
+(function buildPresets() {
+  const box = $('#presets');
+  for (const [nm, la, lo] of PRESETS) {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.type = 'button'; b.textContent = nm;
+    b.setAttribute('aria-pressed', String(S.label === nm));
+    b.onclick = () => {
+      S.lat = la; S.lon = lo; S.label = nm; S.geoAcc = null;
+      box.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c === b)));
+      syncInputs(); save(); recompute();
+    };
+    box.appendChild(b);
+  }
+})();
+$('#btnCompass').onclick = startCompass;
+$('#btnGeo').onclick = locate;
+$('#lat').onchange = $('#lon').onchange = () => {
+  const la = parseFloat($('#lat').value), lo = parseFloat($('#lon').value);
+  if (Number.isFinite(la) && Number.isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180) {
+    S.lat = la; S.lon = lo; S.label = '自訂'; S.geoAcc = null;
+    document.querySelectorAll('#presets .chip').forEach(c => c.setAttribute('aria-pressed', 'false'));
+    save(); recompute();
+  } else syncInputs();
+};
+$('#date').onchange = () => {
+  const v = $('#date').value.split('-').map(Number);
+  if (v.length === 3 && v.every(Number.isFinite)) {
+    S.date = new Date(v[0], v[1] - 1, v[2], 12, 0, 0);
+    S.followToday = sameDay(S.date, new Date());
+    recompute();
+  }
+};
+$('#btnToday').onclick = () => { S.date = new Date(); S.followToday = true; syncInputs(); recompute(); };
+$('#off').oninput = e => { S.offset = parseFloat(e.target.value); $('#offLbl').textContent = S.offset.toFixed(1) + '°'; save(); };
+$('#mRotate').onclick = () => { S.rotate = true; syncInputs(); save(); drawFixed(true); applyRotation(); };
+$('#mNorth').onclick = () => { S.rotate = false; syncInputs(); save(); drawFixed(true); applyRotation(); };
+
+if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+  const w = $('#secwarn'); w.hidden = false;
+  w.innerHTML = `目前是 <b>${location.protocol || 'file:'}</b>。iOS 與 Android 只在 <b>https://</b>（或 localhost）開放羅盤與定位，`
+    + `所以這頁現在只能手動輸入座標 — 太陽資料照樣全部正確。放到任何 HTTPS 空間就完全可用。`;
+}
+
+readTheme(); syncInputs(); recompute();
+let lastHdgTxt = null;
+function renderHeading() {
+  const txt = S.heading == null ? 'x' : String(Math.round(S.heading));
+  if (txt === lastHdgTxt) return;
+  lastHdgTxt = txt;
+  if (S.heading == null) {
+    $('#hdg').textContent = '--°'; $('#hdgname').textContent = '面向';
+    $('#hdghint').textContent = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent)
+      ? '按上方「啟用指南針」' : '桌機沒有磁力計，盤面固定北方朝上';
+  } else {
+    $('#hdg').textContent = txt + '°';
+    $('#hdgname').textContent = dirName(S.heading);
+    $('#hdghint').textContent = S.src === 'ios' ? '真北・iOS 羅盤'
+      : S.src === 'abs' ? '絕對方位感測' : '相對方位，請用校正對準';
+  }
+}
+(function tick() { applyRotation(); drawFixed(false); renderHeading(); requestAnimationFrame(tick); })();
+setInterval(() => {
+  if (S.followToday && !sameDay(new Date(), S.date)) { S.date = new Date(); syncInputs(); recompute(); return; }
+  drawLive(); drawSky(); renderText();
+}, 1000);
+const mq = window.matchMedia('(prefers-color-scheme: dark)');
+(mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(() => recompute());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) recompute(); });
+if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
