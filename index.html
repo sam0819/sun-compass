@@ -753,7 +753,9 @@ function renderWxText() {
     $('#sHumid').textContent = `今日 ${rng(hs)}%`;
     $('#kWind').textContent = '風速';
     $('#vWind').textContent = Math.round(n.ws) + ' km/h';
-    $('#sWind').textContent = `${dirName(n.wd)} ${Math.round(n.wd)}°・陣風 ${n.gust != null ? Math.round(n.gust) : '—'}`;
+    // 部分模式（如 JMA）不提供陣風，沒有就整段不顯示
+    $('#sWind').textContent = `${dirName(n.wd)} ${Math.round(n.wd)}°`
+      + (n.gust != null ? `・陣風 ${Math.round(n.gust)}` : '');
     $('#kRain').textContent = '降雨機率';
     $('#vRain').textContent = (n.pop != null ? Math.round(n.pop) : 0) + '%';
     $('#sRain').textContent = pops.length ? `今日最高 ${Math.round(Math.max(...pops))}%` : '無資料';

@@ -1,5 +1,5 @@
 // 離線快取：野外沒訊號也要能開。改版時把 VER 往上加一號。
-const VER = 'sun-compass-v4';
+const VER = 'sun-compass-v5';
 const FILES = ['./index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 const SHELL = new Set(FILES.map(f => new URL(f, self.location).href));
 const INDEX = new URL('./index.html', self.location).href;
