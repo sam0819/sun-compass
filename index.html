@@ -24,6 +24,7 @@
   --rule:#d6dce9; --dial:#e4eaf4; --dial-2:#c3cee2;
   --sun:#c87408; --dusk:#b63c22; --north:#2a57c9;
   --shade:#6b7693; --night:#9aa4bb;
+  --temp:#c0453a; --humid:#1f7a8c;
   --sans:"PingFang TC","Noto Sans TC","Microsoft JhengHei",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   color-scheme:light;
@@ -34,6 +35,7 @@
   --rule:#26304a; --dial:#18203a; --dial-2:#303c5e;
   --sun:#f5b53d; --dusk:#ef6a4d; --north:#6d9bff;
   --shade:#7a85a3; --night:#4a5471;
+  --temp:#f3796a; --humid:#52b6c9;
   color-scheme:dark;
 }}
 :root[data-theme="dark"]{
@@ -42,6 +44,7 @@
   --rule:#26304a; --dial:#18203a; --dial-2:#303c5e;
   --sun:#f5b53d; --dusk:#ef6a4d; --north:#6d9bff;
   --shade:#7a85a3; --night:#4a5471;
+  --temp:#f3796a; --humid:#52b6c9;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -81,6 +84,11 @@ h1{font-size:19px; font-weight:600; margin:0; letter-spacing:.07em}
 .card.set{border-left:3px solid var(--dusk)}
 .card.now{border-left:3px solid var(--north)}
 .card.sh{border-left:3px solid var(--shade)}
+.card.temp{border-left:3px solid var(--temp)}
+.card.humid{border-left:3px solid var(--humid)}
+.dot{display:inline-block; width:6px; height:6px; border-radius:50%; margin:0 3px 0 7px; vertical-align:middle}
+.dot.t{background:var(--temp)} .dot.h{background:var(--humid)}
+.strip .k b{font-weight:400; color:var(--ink-2); letter-spacing:0}
 
 .strip{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:9px 11px 3px}
 .strip .k{font-size:10.5px; letter-spacing:.14em; color:var(--ink-3); display:flex; justify-content:space-between; gap:8px}
@@ -163,6 +171,19 @@ footer{font-size:10.5px; color:var(--ink-3); font-family:var(--mono); text-align
     <div class="card"><span class="k">傍晚黃金時刻</span><span class="v" id="vGp">—</span><span class="s" id="sGp">—</span></div>
   </div>
 
+  <div class="strip">
+    <div class="k">
+      <span>氣溫與濕度<i class="dot t"></i><b>氣溫</b><i class="dot h"></i><b>濕度</b></span>
+      <em id="wxMeta">讀取中…</em>
+    </div>
+    <svg id="wx" viewBox="0 0 320 104" role="img" aria-label="所選日期的逐時氣溫與相對濕度"></svg>
+  </div>
+
+  <div class="grid">
+    <div class="card temp"><span class="k" id="kTemp">現在氣溫</span><span class="v" id="vTemp">—</span><span class="s" id="sTemp">—</span></div>
+    <div class="card humid"><span class="k" id="kHumid">相對濕度</span><span class="v" id="vHumid">—</span><span class="s" id="sHumid">—</span></div>
+  </div>
+
   <details id="settings">
     <summary>設定 — 地點、日期、校正</summary>
     <div class="panel">
@@ -200,7 +221,7 @@ footer{font-size:10.5px; color:var(--ink-3); font-family:var(--mono); text-align
   </details>
 
   <p class="note" id="diag"></p>
-  <footer>圓心＝天頂　外圈＝地平線　方位角自北起順時針<br>時刻以本機時區顯示，含標準大氣折射（−0.833°），誤差約 ±1 分鐘</footer>
+  <footer>圓心＝天頂　外圈＝地平線　方位角自北起順時針<br>時刻以本機時區顯示，含標準大氣折射（−0.833°），誤差約 ±1 分鐘<br>天氣資料 Open-Meteo，逐時預報涵蓋前後七天</footer>
 </div>
 
 <script>
@@ -295,7 +316,7 @@ const el = (n, a = {}, t) => { const e = document.createElementNS(NS, n);
 let TH = {};
 function readTheme() {
   const cs = getComputedStyle(document.documentElement);
-  for (const k of ['dial','dial-2','ink','ink-2','ink-3','sun','dusk','north','shade','night','surface','rule'])
+  for (const k of ['dial','dial-2','ink','ink-2','ink-3','sun','dusk','north','shade','night','surface','rule','temp','humid'])
     TH[k] = cs.getPropertyValue('--' + k).trim() || '#888';
 }
 
@@ -421,11 +442,15 @@ function drawFixed(force) {
   }
 }
 
+/* ===================== 圖表共用幾何 =====================
+   兩張時間帶用同一組邊界，00–24 的刻度才會上下對齊。 */
+const CH = { W: 320, H: 104, L: 24, R: 24, T: 7, B: 16 };
+
 /* ===================== 高度／時間帶 ===================== */
 function drawSky() {
   const g = $('#sky'); g.textContent = '';
   const D = S.day; if (!D) return;
-  const W = 320, H = 104, L = 22, Rg = 6, T = 7, B = 16;
+  const { W, H, L, R: Rg, T, B } = CH;
   const altMax = Math.max(20, Math.ceil((D.transit.alt + 6) / 10) * 10), altMin = -18;
   const X = ms => L + (ms - D.start) / 86400000 * (W - L - Rg);
   const Y = a => T + (altMax - Math.max(altMin, Math.min(altMax, a))) / (altMax - altMin) * (H - T - B);
@@ -456,6 +481,150 @@ function drawSky() {
     const p = sunPos(new Date(), S.lat, S.lon), x = X(Date.now());
     g.appendChild(el('line', { x1:f2(x), y1:T, x2:f2(x), y2:H - B, stroke:TH.north, 'stroke-width':1 }));
     g.appendChild(el('circle', { cx:f2(x), cy:f2(Y(p.alt)), r:2.7, fill:TH.north, stroke:TH.surface, 'stroke-width':1 }));
+  }
+}
+
+
+/* ===================== 天氣（Open-Meteo，免金鑰、支援 CORS）=====================
+   逐時氣溫與相對濕度，涵蓋前後七天，時間一律用 unixtime 再換成本機時區，
+   避免「地點時區」和「裝置時區」混在一起。最後一次成功的結果存進 localStorage，
+   離線時照樣畫得出來，並在標頭標示資料幾分鐘前抓的。 */
+const WX = { data:null, fetchedAt:0, lastTry:0, lat:null, lon:null, loading:false, error:null };
+const wxKey = (la, lo) => 'sun-compass-wx-' + la.toFixed(2) + ',' + lo.toFixed(2);
+const agoTxt = ms => ms < 60000 ? '剛更新'
+  : ms < 3600000 ? Math.round(ms / 60000) + ' 分前'
+  : ms < 86400000 ? Math.round(ms / 3600000) + ' 小時前'
+  : Math.round(ms / 86400000) + ' 天前';
+
+function wxLoadCache(la, lo) {
+  try {
+    const j = JSON.parse(localStorage.getItem(wxKey(la, lo)) || 'null');
+    return (j && j.d && j.t && j.d.hourly) ? j : null;
+  } catch (e) { return null; }
+}
+
+async function fetchWeather(force) {
+  if (WX.loading) return;
+  const la = S.lat, lo = S.lon;
+  WX.lastTry = Date.now();
+  if (WX.lat !== la || WX.lon !== lo) {
+    const c = wxLoadCache(la, lo);
+    WX.data = c ? c.d : null; WX.fetchedAt = c ? c.t : 0;
+    WX.lat = la; WX.lon = lo; WX.error = null;
+    drawWx(); renderWxText();
+    if (c && !force && Date.now() - c.t < 900000) return;
+  }
+  WX.loading = true; renderWxText();
+  try {
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${la.toFixed(4)}&longitude=${lo.toFixed(4)}`
+      + '&hourly=temperature_2m,relative_humidity_2m,apparent_temperature'
+      + '&current=temperature_2m,relative_humidity_2m,apparent_temperature'
+      + '&past_days=7&forecast_days=7&timeformat=unixtime&timezone=UTC';
+    const res = await fetch(u, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    if (!j.hourly || !Array.isArray(j.hourly.time)) throw new Error('payload');
+    WX.data = j; WX.fetchedAt = Date.now(); WX.error = null;
+    try { localStorage.setItem(wxKey(la, lo), JSON.stringify({ d:j, t:WX.fetchedAt })); } catch (e) {}
+  } catch (e) {
+    WX.error = navigator.onLine === false ? '離線' : '取得失敗';
+  } finally {
+    WX.loading = false; drawWx(); renderWxText();
+  }
+}
+
+/* 取出「所選當地日期」整天的逐時資料（前後各多抓一小時，讓曲線接到邊界） */
+function wxDay() {
+  if (!WX.data || !S.day) return null;
+  const Hh = WX.data.hourly, a = S.day.start - 3600000, b = S.day.start + 86400000 + 3600000, out = [];
+  for (let i = 0; i < Hh.time.length; i++) {
+    const ms = Hh.time[i] * 1000;
+    if (ms < a || ms > b) continue;
+    if (Hh.temperature_2m[i] == null || Hh.relative_humidity_2m[i] == null) continue;
+    out.push({ ms, t:Hh.temperature_2m[i], rh:Hh.relative_humidity_2m[i], at:Hh.apparent_temperature[i] });
+  }
+  return out.length >= 2 ? out : null;
+}
+const wxInterp = (rows, k, ms) => {
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i - 1].ms <= ms && ms <= rows[i].ms) {
+      const f = (ms - rows[i - 1].ms) / (rows[i].ms - rows[i - 1].ms || 1);
+      return rows[i - 1][k] + f * (rows[i][k] - rows[i - 1][k]);
+    }
+  }
+  return null;
+};
+
+function drawWx() {
+  const g = $('#wx'); if (!g) return;
+  g.textContent = '';
+  const D = S.day, rows = wxDay(); if (!D || !rows) return;
+  const { W, H, L, R, T, B } = CH;
+  const X = ms => L + (ms - D.start) / 86400000 * (W - L - R);
+  const ts = rows.map(r => r.t), hs = rows.map(r => r.rh);
+  let tMin = Math.floor(Math.min(...ts)) - 1, tMax = Math.ceil(Math.max(...ts)) + 1;
+  if (tMax - tMin < 6) { const m = (tMax + tMin) / 2; tMin = Math.round(m - 3); tMax = Math.round(m + 3); }
+  let hMin = Math.floor(Math.min(...hs) / 10) * 10, hMax = Math.ceil(Math.max(...hs) / 10) * 10;
+  if (hMax - hMin < 30) { hMax = Math.min(100, hMin + 30); hMin = Math.max(0, hMax - 30); }
+  const YT = v => T + (tMax - v) / (tMax - tMin) * (H - T - B);
+  const YH = v => T + (hMax - v) / (hMax - hMin) * (H - T - B);
+  const clip = rows.filter(r => r.ms >= D.start - 3600000 && r.ms <= D.start + 86400000 + 3600000);
+  // 濕度：面積 + 線
+  const hp = clip.map(r => f2(X(r.ms)) + ',' + f2(YH(r.rh)));
+  g.appendChild(el('path', { d:`M ${f2(X(clip[0].ms))} ${H - B} L ${hp.join(' L ')} L ${f2(X(clip[clip.length - 1].ms))} ${H - B} Z`,
+    fill:TH.humid, opacity:.14 }));
+  g.appendChild(el('polyline', { points:hp.join(' '), fill:'none', stroke:TH.humid, 'stroke-width':1.3,
+    'stroke-linejoin':'round', opacity:.9 }));
+  // 氣溫：線
+  g.appendChild(el('polyline', { points:clip.map(r => f2(X(r.ms)) + ',' + f2(YT(r.t))).join(' '), fill:'none',
+    stroke:TH.temp, 'stroke-width':1.8, 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
+  // 雙軸標示
+  g.appendChild(el('text', { x:2, y:f2(YT(tMax) + 6), fill:TH.temp, 'font-size':7 }, tMax + '°'));
+  g.appendChild(el('text', { x:2, y:f2(YT(tMin) - 1), fill:TH.temp, 'font-size':7 }, tMin + '°'));
+  g.appendChild(el('text', { x:W - 2, y:f2(YH(hMax) + 6), 'text-anchor':'end', fill:TH.humid, 'font-size':7 }, hMax + '%'));
+  g.appendChild(el('text', { x:W - 2, y:f2(YH(hMin) - 1), 'text-anchor':'end', fill:TH.humid, 'font-size':7 }, hMin + '%'));
+  for (let h = 0; h <= 24; h += 3) {
+    const x = X(D.start + h * 3600000);
+    g.appendChild(el('line', { x1:f2(x), y1:H - B, x2:f2(x), y2:H - B + 2.6, stroke:TH['dial-2'], 'stroke-width':.7 }));
+    if (h % 6 === 0) g.appendChild(el('text', { x:f2(x), y:H - B + 10, 'text-anchor':'middle', fill:TH['ink-3'], 'font-size':7 },
+      String(h).padStart(2, '0')));
+  }
+  if (sameDay(new Date(), S.date)) {
+    const x = X(Date.now()), v = wxInterp(rows, 't', Date.now());
+    g.appendChild(el('line', { x1:f2(x), y1:T, x2:f2(x), y2:H - B, stroke:TH.north, 'stroke-width':1 }));
+    if (v != null) g.appendChild(el('circle', { cx:f2(x), cy:f2(YT(v)), r:2.5, fill:TH.temp, stroke:TH.surface, 'stroke-width':1 }));
+  }
+}
+
+function renderWxText() {
+  const rows = wxDay(), live = sameDay(new Date(), S.date);
+  const meta = $('#wxMeta'); if (!meta) return;
+  if (!rows) {
+    // 有資料但這天沒有 → 真正的原因是日期超出範圍，不是連線失敗
+    meta.textContent = WX.data ? '超出預報範圍' : WX.loading ? '讀取中…' : WX.error || '無資料';
+    $('#kTemp').textContent = '氣溫'; $('#vTemp').textContent = '—';
+    $('#sTemp').textContent = WX.data ? '僅涵蓋前後七天' : WX.error === '離線' ? '連線後自動更新' : WX.loading ? '讀取中' : '無資料';
+    $('#kHumid').textContent = '相對濕度'; $('#vHumid').textContent = '—'; $('#sHumid').textContent = '';
+    return;
+  }
+  meta.textContent = (WX.error ? WX.error + '・' : '') + agoTxt(Date.now() - WX.fetchedAt);
+  const ts = rows.map(r => r.t), hs = rows.map(r => r.rh);
+  const lo = Math.min(...ts), hi = Math.max(...ts), hlo = Math.min(...hs), hhi = Math.max(...hs);
+  const cur = live && WX.data.current && WX.data.current.temperature_2m != null ? WX.data.current : null;
+  if (cur) {
+    $('#kTemp').textContent = '現在氣溫';
+    $('#vTemp').textContent = cur.temperature_2m.toFixed(1) + '°C';
+    $('#sTemp').textContent = `體感 ${cur.apparent_temperature.toFixed(1)}°・${lo.toFixed(1)}–${hi.toFixed(1)}°`;
+    $('#kHumid').textContent = '相對濕度';
+    $('#vHumid').textContent = Math.round(cur.relative_humidity_2m) + '%';
+    $('#sHumid').textContent = `今日 ${hlo}–${hhi}%`;
+  } else {
+    $('#kTemp').textContent = '氣溫範圍';
+    $('#vTemp').textContent = `${lo.toFixed(1)}–${hi.toFixed(1)}°`;
+    $('#sTemp').textContent = '該日逐時預報';
+    $('#kHumid').textContent = '濕度範圍';
+    $('#vHumid').textContent = `${hlo}–${hhi}%`;
+    $('#sHumid').textContent = '該日逐時預報';
   }
 }
 
@@ -497,6 +666,8 @@ function renderText() {
 function recompute() {
   S.day = buildDay(S.date, S.lat, S.lon);
   readTheme(); drawStatic(); drawRose(); drawFixed(true); drawSky(); renderText(); applyRotation();
+  drawWx(); renderWxText();
+  if (WX.lat !== S.lat || WX.lon !== S.lon) fetchWeather();
 }
 let lastRot = null;
 function applyRotation() {
@@ -627,6 +798,8 @@ if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(location.hos
 }
 
 readTheme(); syncInputs(); recompute();
+fetchWeather();
+window.addEventListener('online', () => fetchWeather(true));
 let lastHdgTxt = null;
 function renderHeading() {
   const txt = S.heading == null ? 'x' : String(Math.round(S.heading));
@@ -646,7 +819,8 @@ function renderHeading() {
 (function tick() { applyRotation(); drawFixed(false); renderHeading(); requestAnimationFrame(tick); })();
 setInterval(() => {
   if (S.followToday && !sameDay(new Date(), S.date)) { S.date = new Date(); syncInputs(); recompute(); return; }
-  drawLive(); drawSky(); renderText();
+  drawLive(); drawSky(); renderText(); drawWx(); renderWxText();
+  if (!WX.loading && Date.now() - WX.lastTry > (WX.error ? 60000 : 900000)) fetchWeather();
 }, 1000);
 const mq = window.matchMedia('(prefers-color-scheme: dark)');
 (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(() => recompute());
