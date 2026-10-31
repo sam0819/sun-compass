@@ -1,5 +1,5 @@
 // 離線快取：野外沒訊號也要能開。改版時把 VER 往上加一號。
-const VER = 'sun-compass-v2';
+const VER = 'sun-compass-v3';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VER).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
